@@ -1,7 +1,9 @@
-
 import argparse
+import json
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 
 #создание парсера
 def create_parser():
@@ -67,15 +69,38 @@ def validate_args(args, parser):
         if url.scheme not in ("http", "https") or not url.netloc:
             parser.error("Некорректный URL репозитория")
 
-#вывод параметров в консоль
-def print_config(args):
-    print(f"Пакет: {args.package}")
-    print(f"Репозиторий: {args.repo_url}")
-    print(f"Тестовый режим: {args.test_mode}")
-    print(f"Выходной файл: {args.output}")
-    print(f"ASCII-дерево: {args.ascii_tree}")
-    print(f"Максимальная глубина: {args.max_depth}")
-    print(f"Фильтр: {args.filter}")
+def fetch_package_data(package, repo_url):
+    url = f"{repo_url.rstrip('/')}/{package}"
+
+    try:
+        with urlopen(url) as response:
+            data = response.read()
+
+    except HTTPError as error:
+        print("Произошла ошибка на сервере")
+        return None
+    except URLError as error:
+        print("Ошибка: проблемы с соединением")
+        return None
+
+    return data
+
+def get_dependencies(data):
+    try:
+        package_data = json.loads(data)
+        latest_version = package_data["dist-tags"]["latest"]
+        version_data = package_data["versions"][latest_version]
+        dependencies = version_data.get("dependencies", {})
+
+    except json.JSONDecodeError:
+        print("Некорректный JSON")
+        return None
+
+    except KeyError as error:
+        print(f"Отсутствует необходимый ключ: {error}")
+        return None
+
+    return dependencies
 
 
 def main():
@@ -83,7 +108,28 @@ def main():
     args = parser.parse_args()
 
     validate_args(args, parser)
-    print_config(args)
+
+    if args.test_mode:
+        print("Тестовый режим пока не реализован")
+        return
+
+    data = fetch_package_data(args.package, args.repo_url)
+
+    if data is None:
+        return
+
+    dependencies = get_dependencies(data)
+
+    if dependencies is None:
+        return
+
+    if not dependencies:
+        print("У пакета нет прямых зависимостей")
+        return
+
+    print("Прямые зависимости:")
+    for name, version in dependencies.items():
+        print(f"{name}: {version}")
 
 
 if __name__ == "__main__":
