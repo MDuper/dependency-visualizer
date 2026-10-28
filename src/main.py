@@ -77,10 +77,11 @@ def fetch_package_data(package, repo_url):
             data = response.read()
 
     except HTTPError as error:
-        print("Произошла ошибка на сервере")
+        print(f"HTTP-ошибка: {error.code}")
         return None
+
     except URLError as error:
-        print("Ошибка: проблемы с соединением")
+        print(f"Ошибка соединения: {error.reason}")
         return None
 
     return data
@@ -102,6 +103,69 @@ def get_dependencies(data):
 
     return dependencies
 
+def build_dependency_graph(
+        package, repo_url, max_depth, filter_text, test_mode):
+    graph = {}
+    stack = [(package, 0)]
+    visited_depth = {}
+    test_graph = load_test_graph(repo_url) if test_mode else None
+    if test_mode and test_graph is None: return None
+
+    while stack:
+        current, depth = stack.pop()
+
+        if current in visited_depth:
+            if visited_depth[current] <= depth:
+                continue
+
+        visited_depth[current] = depth
+
+        if depth == max_depth:
+            graph[current] = []
+            continue
+
+        if test_mode:
+            dependencies = test_graph.get(current, [])
+        else:
+            data = fetch_package_data(current, repo_url)
+            if data is None:
+                return None
+
+            dependencies = get_dependencies(data)
+            if dependencies is None:
+                return None
+
+        names = [
+            name for name in dependencies
+            if not filter_text or filter_text not in name
+        ]
+
+        graph[current] = names
+
+        for dependency in names:
+            stack.append((dependency, depth + 1))
+
+    return graph
+
+def load_test_graph(path):
+    graph = {}
+
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            for line in file:
+                name, dependencies = line.split(":", 1)
+                graph[name.strip()] = dependencies.split()
+
+    except OSError as error:
+        print(f"Ошибка чтения файла: {error}")
+        return None
+
+    except ValueError:
+        print("Некорректный формат тестового файла")
+        return None
+
+    return graph
+
 
 def main():
     parser = create_parser()
@@ -109,28 +173,16 @@ def main():
 
     validate_args(args, parser)
 
-    if args.test_mode:
-        print("Тестовый режим пока не реализован")
+    graph = build_dependency_graph(
+        args.package,
+        args.repo_url,
+        args.max_depth,
+        args.filter,
+        args.test_mode
+    )
+
+    if graph is None:
         return
-
-    data = fetch_package_data(args.package, args.repo_url)
-
-    if data is None:
-        return
-
-    dependencies = get_dependencies(data)
-
-    if dependencies is None:
-        return
-
-    if not dependencies:
-        print("У пакета нет прямых зависимостей")
-        return
-
-    print("Прямые зависимости:")
-    for name, version in dependencies.items():
-        print(f"{name}: {version}")
-
 
 if __name__ == "__main__":
     main()
