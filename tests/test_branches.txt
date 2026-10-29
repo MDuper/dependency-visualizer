@@ -1,0 +1,7 @@
+root-pkg: core-lib ui-lib test-helper
+core-lib: parser-lib
+ui-lib: theme-lib
+test-helper: unused-lib
+parser-lib:
+theme-lib:
+unused-lib:

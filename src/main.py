@@ -1,5 +1,6 @@
 import argparse
 import json
+import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -113,13 +114,10 @@ def build_dependency_graph(
 
     while stack:
         current, depth = stack.pop()
-
         if current in visited_depth:
             if visited_depth[current] <= depth:
                 continue
-
         visited_depth[current] = depth
-
         if depth == max_depth:
             graph[current] = []
             continue
@@ -130,7 +128,6 @@ def build_dependency_graph(
             data = fetch_package_data(current, repo_url)
             if data is None:
                 return None
-
             dependencies = get_dependencies(data)
             if dependencies is None:
                 return None
@@ -141,7 +138,6 @@ def build_dependency_graph(
         ]
 
         graph[current] = names
-
         for dependency in names:
             stack.append((dependency, depth + 1))
 
@@ -198,6 +194,87 @@ def get_loading_order(graph):
 
     return order
 
+def generate_mermaid(graph):
+    lines = ["flowchart TD"]
+
+    node_ids = {
+        package: f"n{i}"
+        for i, package in enumerate(graph)
+    }
+
+    for package, dependencies in graph.items():
+        package_id = node_ids[package]
+        lines.append(f'    {package_id}["{package}"]')
+
+        for dependency in dependencies:
+            dependency_id = node_ids[dependency]
+            lines.append(f"    {package_id} --> {dependency_id}")
+
+    return "\n".join(lines)
+
+def save_svg(mermaid_code, output):
+    output_dir = Path("output")
+
+    mermaid_path = output_dir / "graph.mmd"
+    svg_path = output_dir / Path(output).name
+
+    mermaid_path.write_text(mermaid_code, encoding="utf-8")
+
+    try:
+        subprocess.run(
+            [
+                "npx", "--yes",
+                "--package", "@mermaid-js/mermaid-cli",
+                "mmdc",
+                "-i", str(mermaid_path),
+                "-o", str(svg_path)
+            ],
+            check=True
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"Ошибка генерации SVG: {error}")
+        return False
+    finally:
+        mermaid_path.unlink(missing_ok=True)
+
+    print(f"Граф сохранён: {svg_path}")
+    return True
+
+def print_ascii_tree(graph, root):
+    print(root)
+
+    visited = {root}
+    stack = []
+    dependencies = graph.get(root, [])
+
+    for i in range(len(dependencies) - 1, -1, -1):
+        stack.append((
+            dependencies[i],
+            "",
+            i == len(dependencies) - 1
+        ))
+
+    while stack:
+        current, prefix, is_last = stack.pop()
+
+        connector = "\\-- " if is_last else "|-- "
+        print(prefix + connector + current)
+
+        if current in visited:
+            continue
+
+        visited.add(current)
+
+        new_prefix = prefix + ("    " if is_last else "|   ")
+        dependencies = graph.get(current, [])
+
+        for i in range(len(dependencies) - 1, -1, -1):
+            stack.append((
+                dependencies[i],
+                new_prefix,
+                i == len(dependencies) - 1
+            ))
+
 def main():
     parser = create_parser()
     args = parser.parse_args()
@@ -215,11 +292,11 @@ def main():
     if graph is None:
         return
 
-    order = get_loading_order(graph)
+    mermaid_code = generate_mermaid(graph)
+    save_svg(mermaid_code, args.output)
 
-    print("Порядок загрузки зависимостей:")
-    for package in order:
-        print(package)
+    if args.ascii_tree:
+        print_ascii_tree(graph, args.package)
 
 if __name__ == "__main__":
     main()
