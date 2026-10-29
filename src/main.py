@@ -166,6 +166,37 @@ def load_test_graph(path):
 
     return graph
 
+def get_loading_order(graph):
+    order = []
+    visited = set()
+    processing = set()
+
+    for package in graph:
+        stack = [(package, False)]
+
+        while stack:
+            current, processed = stack.pop()
+
+            if processed:
+                processing.discard(current)
+
+                if current not in visited:
+                    visited.add(current)
+                    order.append(current)
+
+                continue
+
+            if current in visited or current in processing:
+                continue
+
+            processing.add(current)
+            stack.append((current, True))
+
+            for dependency in graph.get(current, []):
+                if dependency not in visited:
+                    stack.append((dependency, False))
+
+    return order
 
 def main():
     parser = create_parser()
@@ -183,6 +214,12 @@ def main():
 
     if graph is None:
         return
+
+    order = get_loading_order(graph)
+
+    print("Порядок загрузки зависимостей:")
+    for package in order:
+        print(package)
 
 if __name__ == "__main__":
     main()
