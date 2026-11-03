@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 
-#создание парсера
 def create_parser():
     parser = argparse.ArgumentParser(
         description="Визуализатор зависимостей npm-пакетов"
@@ -48,7 +47,6 @@ def create_parser():
     )
     return parser
 
-#проверка корректности значений
 def validate_args(args, parser):
     if not args.package.strip():
         parser.error("Название пакета не может быть пустым")
